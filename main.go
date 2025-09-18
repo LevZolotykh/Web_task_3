@@ -5,45 +5,51 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 )
 
-type Response struct {
-	Message  string `json:"message"`
-	XResult  string `json:"x-result"`
-	XBody    string `json:"x-body"`
-}
-
-func enableCORS(handler http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "x-test,ngrok-skip-browser-warning,Content-Type,Accept,Access-Control-Allow-Headers")
-		
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		
-		handler(w, r)
-	}
+type Resp struct {
+	Message string `json:"message"`
+	XResult string `json:"x-result"`
+	XBody   string `json:"x-body"`
 }
 
 func resultHandler(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	defer r.Body.Close()
+	bodyBytes, _ := io.ReadAll(r.Body)
+	_ = r.Body.Close()
+	bodyStr := string(bodyBytes)
 
-	response := Response{
-		Message: "levchik",
-		XResult: r.Header.Get("x-test"),
-		XBody:   string(body),
-	}
+	xTest := r.Header.Get("x-test")
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "x-test,ngrok-skip-browser-warning,Content-Type,Accept,Access-Control-Allow-Headers")
+
+	resp := Resp{
+		Message: "levchik",
+		XResult: xTest,
+		XBody:   bodyStr,
+	}
+
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(resp); err != nil {
+		http.Error(w, `{"error":"encode failed"}`, http.StatusInternalServerError)
+	}
 }
 
 func main() {
-	http.HandleFunc("/result4/", enableCORS(resultHandler))
-	log.Printf("Server starting on http://0.0.0.0:5000")
-	log.Fatal(http.ListenAndServe("0.0.0.0:5000", nil))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	http.HandleFunc("/result4/", resultHandler)
+
+	http.HandleFunc("/result4", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/result4/", http.StatusMovedPermanently)
+	})
+
+	log.Printf("Server listening on :%s (endpoint: /result4/)", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
